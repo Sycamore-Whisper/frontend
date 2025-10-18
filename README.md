@@ -91,7 +91,10 @@ location / {
 部署完成owo。
 
 
+5、管理页面
 
+
+前往/admin，输入初始化时设置的token即可！
 
 
 `python api\_server.py`
