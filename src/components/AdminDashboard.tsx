@@ -12,15 +12,23 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
+  Input,
+  Tooltip,
+  shorthands,
 } from '@fluentui/react-components';
 import type { TabValue } from '@fluentui/react-components';
-import { getAuditMode, setAuditMode, getBackupZip, recoverBackup, getPicLinks, deletePic, type PicLink, getPendingReports, approveReport, rejectReport, type PendingReport, getAdminPostInfo, getPendingPosts, getRejectedPosts, type AdminPostListItem, approvePost, disapprovePost, reauditPost, deletePost } from '../admin_api';
+import { getAuditMode, setAuditMode, getBackupZip, recoverBackup, getPicLinks, deletePic, type PicLink, getPendingReports, approveReport, rejectReport, type PendingReport, getAdminPostInfo, getPendingPosts, getRejectedPosts, type AdminPostListItem, approvePost, disapprovePost, reauditPost, deletePost, modifyPost, 
+  getBannedKeywords, setBannedKeywordsList } from '../admin_api';
 import { Switch } from '@fluentui/react-components';
 import { toast } from 'react-hot-toast';
 import { 
   SignOut24Regular, 
   WeatherSunny24Regular,
-  WeatherMoon24Regular 
+  WeatherMoon24Regular,
+  Dismiss12Regular,
+  Add20Regular,
+  Save20Regular,
+  QuestionCircle20Regular,
 } from '@fluentui/react-icons';
 import { adminLogout } from '../admin_api';
 import { SITE_TITLE } from '../config';
@@ -105,6 +113,40 @@ const useStyles = makeStyles({
     alignItems: 'center',
     zIndex: 999,
   },
+  bannedRow: {
+    display: 'flex',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: tokens.spacingHorizontalS,
+    ...shorthands.padding(tokens.spacingVerticalS, 0),
+  },
+  chip: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: tokens.spacingHorizontalXS,
+    backgroundColor: tokens.colorNeutralBackground1,
+    ...shorthands.border('1px', 'solid', tokens.colorNeutralStroke1),
+    ...shorthands.borderRadius(tokens.borderRadiusLarge),
+    ...shorthands.padding(tokens.spacingVerticalXS, tokens.spacingHorizontalS),
+  },
+  chipText: {
+    fontSize: tokens.fontSizeBase300,
+    lineHeight: '20px',
+  },
+  chipDismiss: {
+    cursor: 'pointer',
+    color: tokens.colorNeutralForeground3,
+  },
+  addInput: {
+    width: '220px',
+  },
+  dashedAdd: {
+    backgroundColor: tokens.colorNeutralBackground1,
+    ...shorthands.border('1px', 'dashed', tokens.colorNeutralStroke1),
+  },
+  fileInputHidden: {
+    display: 'none',
+  },
 });
 
 interface AdminDashboardProps {
@@ -163,6 +205,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // 评论管理弹窗
   const [manageCommentsModal, setManageCommentsModal] = React.useState<{ open: boolean; id?: number }>({ open: false });
 
+  // 违禁词状态
+  const [bannedKeywords, setBannedKeywords] = React.useState<string[]>([]);
+  const [newKeyword, setNewKeyword] = React.useState<string>('');
+  const [bannedLoading, setBannedLoading] = React.useState<boolean>(false);
+  const [bannedSaving, setBannedSaving] = React.useState<boolean>(false);
+  const fileImportRef = React.useRef<HTMLInputElement | null>(null);
+  const [importing, setImporting] = React.useState<boolean>(false);
+
   React.useEffect(() => {
     if (activeTab === 'systemSettings') {
       setLoadingAudit(true);
@@ -172,7 +222,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
         })
         .catch((err: any) => {
           console.error(err);
-          const msg = String(err?.message || '');
+          const msg = String(err?.message || '获取审核模式失败');
           if (msg.includes('401') || msg.includes('403') || msg.includes('登录已过期')) {
             toast.error('身份验证失败，请重新登陆');
           } else {
@@ -180,6 +230,21 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
           }
         })
         .finally(() => setLoadingAudit(false));
+
+      // 加载违禁词
+      setBannedLoading(true);
+      getBannedKeywords()
+        .then((list) => setBannedKeywords(Array.isArray(list) ? list : []))
+        .catch((err: any) => {
+          console.error(err);
+          const msg = String(err?.message || '获取违禁词失败');
+          if (msg.includes('401') || msg.includes('403') || msg.includes('登录已过期')) {
+            toast.error('身份验证失败，请重新登陆');
+          } else {
+            toast.error('获取违禁词失败');
+          }
+        })
+        .finally(() => setBannedLoading(false));
     } else if (activeTab === 'imageManage') {
       setPicLoading(true);
       getPicLinks(picPage)
@@ -350,6 +415,62 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       } else {
         toast.error('切换审核模式失败');
       }
+    }
+  };
+
+  // 违禁词操作
+  const handleAddKeyword = () => {
+    const raw = newKeyword.trim();
+    if (!raw) return;
+    const parts = raw.split(/[,，\s]+/).map(x => x.trim()).filter(Boolean);
+    const set = new Set([...bannedKeywords.map(x => x.trim()), ...parts]);
+    setBannedKeywords([...set]);
+    setNewKeyword('');
+  };
+
+  const handleRemoveKeyword = (word: string) => {
+    setBannedKeywords(prev => prev.filter(x => x !== word));
+  };
+
+  const handleSaveKeywords = async () => {
+    try {
+      setBannedSaving(true);
+      await setBannedKeywordsList(bannedKeywords);
+      toast.success('已保存违禁词列表');
+    } catch (e: any) {
+      const msg = String(e?.message || '保存失败');
+      if (msg.includes('401') || msg.includes('403') || msg.includes('登录已过期')) {
+        toast.error('身份验证失败，请重新登陆');
+      } else {
+        toast.error(msg);
+      }
+    } finally {
+      setBannedSaving(false);
+    }
+  };
+
+  const handleClickImportFile = () => {
+    fileImportRef.current?.click();
+  };
+
+  const handleImportFromText = async (file: File) => {
+    try {
+      setImporting(true);
+      const text = await file.text();
+      const parts = text
+        .split(/[\n\r\t,，;；\s]+/)
+        .map(s => s.trim())
+        .filter(Boolean);
+      const set = new Set([...bannedKeywords.map(x => x.trim()), ...parts]);
+      const added = Math.max(0, [...set].length - bannedKeywords.length);
+      setBannedKeywords([...set]);
+      toast.success(`已导入 ${added} 个违禁词`);
+    } catch (e: any) {
+      const msg = String(e?.message || '读取文件失败');
+      toast.error(msg.includes('Failed') ? '读取文件失败，请确认为TXT文本' : msg);
+    } finally {
+      setImporting(false);
+      if (fileImportRef.current) fileImportRef.current.value = '';
     }
   };
 
@@ -551,6 +672,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
           {activeTab === 'systemSettings' ? (
             <div>
               <Text size={400} weight="semibold">系统设置</Text>
+
+              {/* 审核开关 */}
               <div style={{ marginTop: tokens.spacingVerticalM }}>
                 <Text size={300}>新文章是否需要审核</Text>
                 <div style={{ marginTop: tokens.spacingVerticalS }}>
@@ -562,6 +685,59 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <Text size={200} color="subtle" style={{ marginLeft: tokens.spacingHorizontalS }}>
                     {needAudit ? '开' : '关'}
                   </Text>
+                </div>
+              </div>
+
+              {/* 违禁词设置 */}
+              <div style={{ marginTop: tokens.spacingVerticalL }}>
+                <Text size={300}>违禁词</Text>
+                <div className={styles.bannedRow}>
+                  {bannedKeywords.map((word) => (
+                    <span key={word} className={styles.chip}>
+                      <span className={styles.chipText}>{word}</span>
+                      <span className={styles.chipDismiss} role="button" aria-label={`删除 ${word}`} onClick={() => handleRemoveKeyword(word)}>
+                        <Dismiss12Regular />
+                      </span>
+                    </span>
+                  ))}
+                  <Input
+                    placeholder="输入新违禁词，支持逗号分隔"
+                    value={newKeyword}
+                    onChange={(e) => setNewKeyword((e.target as HTMLInputElement).value)}
+                    className={styles.addInput}
+                  />
+                  <Button appearance="outline" icon={<Add20Regular />} className={styles.dashedAdd} onClick={handleAddKeyword} disabled={bannedLoading}>
+                    新增
+                  </Button>
+                  <input
+                    ref={fileImportRef}
+                    type="file"
+                    accept=".txt,text/plain"
+                    className={styles.fileInputHidden}
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) void handleImportFromText(f);
+                    }}
+                    disabled={bannedLoading || importing}
+                  />
+                  <Button appearance="outline" icon={<Add20Regular />} className={styles.dashedAdd} onClick={handleClickImportFile} disabled={bannedLoading || importing}>
+                    批量导入
+                  </Button>
+                  <Button appearance="primary" icon={<Save20Regular />} onClick={handleSaveKeywords} disabled={bannedSaving || bannedLoading}>
+                    保存
+                  </Button>
+                  <Tooltip
+                     relationship="description"
+                     content={(
+                       <>
+                         分隔符支持：换行、逗号（,）、中文逗号（，）、分号（;）、中文分号（；）、空格、制表符。<br />
+                         示例：垃圾, 你妈；nm 月吗<br />
+                         约吗
+                       </>
+                     )}
+                   >
+                     <Button appearance="subtle" icon={<QuestionCircle20Regular />} aria-label="分隔符说明" />
+                   </Tooltip>
                 </div>
               </div>
 

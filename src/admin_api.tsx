@@ -730,3 +730,43 @@ export const modifyComment = async (
   }
   return resp.json();
 };
+
+/**
+ * 获取违禁词列表
+ * GET /admin/get/banned_keywords -> { keywords: string[] }
+ */
+export const getBannedKeywords = async (): Promise<string[]> => {
+  const resp = await adminApiRequest('/get/banned_keywords', { method: 'GET' });
+  if (!resp.ok) {
+    throw new Error(`获取违禁词失败: ${resp.status}`);
+  }
+  const data = await resp.json();
+  const list = Array.isArray(data?.keywords) ? data.keywords : (Array.isArray(data) ? data : []);
+  return list.map((x: any) => String(x)).filter(Boolean);
+};
+
+/**
+ * 保存违禁词列表
+ * POST /admin/banned_keywords { BANNED_KEYWORDS: string[] }
+ */
+export const setBannedKeywordsList = async (keywords: string[]): Promise<{ status: 'OK' }> => {
+  const clean = (keywords || []).map((x) => String(x).trim()).filter((x) => !!x);
+  const resp = await adminApiRequest('/banned_keywords', {
+    method: 'POST',
+    body: JSON.stringify({ BANNED_KEYWORDS: clean }),
+  });
+  if (!resp.ok) {
+    let detail = '';
+    try {
+      const ct = resp.headers.get('Content-Type') || '';
+      if (ct.includes('application/json')) {
+        const d = await resp.json();
+        detail = typeof d === 'string' ? d : (d?.reason || JSON.stringify(d));
+      } else {
+        detail = await resp.text();
+      }
+    } catch {}
+    throw new Error(`保存违禁词失败: ${resp.status}${detail ? ` - ${detail}` : ''}`);
+  }
+  return resp.json();
+};

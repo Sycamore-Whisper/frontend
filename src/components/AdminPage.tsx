@@ -4,7 +4,12 @@ import AdminLogin from './AdminLogin';
 import AdminDashboard from './AdminDashboard';
 import { Toaster } from 'react-hot-toast';
 
-const AdminPage: React.FC = () => {
+interface AdminPageProps {
+  isDarkMode: boolean;
+  onToggleTheme: () => void;
+}
+
+const AdminPage: React.FC<AdminPageProps> = ({ isDarkMode, onToggleTheme }) => {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -34,7 +39,7 @@ const AdminPage: React.FC = () => {
   return (
     <>
       {isLoggedIn ? (
-        <AdminDashboard onLogout={handleLogout} />
+        <AdminDashboard onLogout={handleLogout} isDarkMode={isDarkMode} onToggleTheme={onToggleTheme} />
       ) : (
         <AdminLogin onLoginSuccess={handleLoginSuccess} />
       )}
